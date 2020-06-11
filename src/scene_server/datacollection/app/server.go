@@ -189,6 +189,7 @@ type DCServer struct {
 var configLock sync.Mutex
 
 func (h *DCServer) onHostConfigUpdate(previous, current cc.ProcessConfig) {
+
 	configLock.Lock()
 	defer configLock.Unlock()
 	if len(current.ConfigMap) > 0 {
