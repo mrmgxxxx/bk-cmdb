@@ -39,7 +39,7 @@ import (
 
 type HostSnap struct {
 	redisCli    *redis.Client
-	authManager extensions.AuthManager
+	authManager *extensions.AuthManager
 	*backbone.Engine
 
 	filter *filter
@@ -47,7 +47,7 @@ type HostSnap struct {
 	db     dal.RDB
 }
 
-func NewHostSnap(ctx context.Context, redisCli *redis.Client, db dal.RDB, engine *backbone.Engine, authManager extensions.AuthManager) *HostSnap {
+func NewHostSnap(ctx context.Context, redisCli *redis.Client, db dal.RDB, engine *backbone.Engine, authManager *extensions.AuthManager) *HostSnap {
 	h := &HostSnap{
 		redisCli:    redisCli,
 		ctx:         ctx,
@@ -65,20 +65,19 @@ var compareFields = []string{"bk_cpu", "bk_cpu_module", "bk_cpu_mhz", "bk_disk",
 
 // Hash returns hash value base on message.
 func (h *HostSnap) Hash(msg string) (string, error) {
-	/*
-		// pre.
-		data := msg
-		if !gjson.Get(msg, "cloudid").Exists() {
-			data = gjson.Get(msg, "data").String()
-		}
+	cloudid := gjson.Get(msg, "cloudid").String()
+	if len(cloudid) == 0 {
+		return "", fmt.Errorf("can't make hash from invalid message format, cloudid empty")
+	}
 
-		val := gjson.Parse(data)
-		cloudID := val.Get("cloudid").Int()
-		ips := getIPS(&val)
-	*/
+	ip := gjson.Get(msg, "ip").String()
+	if len(ip) == 0 {
+		return "", fmt.Errorf("can't make hash from invalid message format, ip empty")
+	}
 
-	// TODO
-	return "", nil
+	hash := fmt.Sprintf("%s:%s", cloudid, ip)
+
+	return hash, nil
 }
 
 // Mock returns local mock message for testing.
@@ -136,7 +135,7 @@ func (h *HostSnap) Analyze(mesg string) error {
 		return nil
 	}
 
-	blog.Infof("snapshot for host changed, need update, host id: %d, ip: %s, cloud id: %d, from %s to %s, rid: %s",
+	blog.V(5).Infof("snapshot for host changed, need update, host id: %d, ip: %s, cloud id: %d, from %s to %s, rid: %s",
 		hostID, innerIP, cloudID, host, raw, rid)
 
 	// add auditLog
@@ -235,7 +234,7 @@ func (h *HostSnap) Analyze(mesg string) error {
 		return fmt.Errorf("create host audit log failed, err: %s", result.ErrMsg)
 	}
 
-	blog.Infof("snapshot for host changed, update success, host id: %d, ip: %s, cloud id: %s, rid: %s",
+	blog.V(5).Infof("snapshot for host changed, update success, host id: %d, ip: %s, cloud id: %s, rid: %s",
 		hostID, innerIP, gjson.Get(mesg, "cloudid").String(), rid)
 
 	return nil
