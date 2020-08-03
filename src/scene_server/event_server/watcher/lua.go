@@ -10,7 +10,7 @@
  * limitations under the License.
  */
 
-package service
+package watcher
 
 import (
 	"errors"
@@ -72,11 +72,11 @@ return elements
 `
 )
 
-// getNodesFromCursor get node start from a cursor, the return result
+// GetNodesFromCursor get node start from a cursor, the return result
 // do not contain this cursor's value.
-func (s *Service) getNodesFromCursor(count int, startCursor string, key event.Key) ([]*watch.ChainNode, error) {
+func (w *Watcher) GetNodesFromCursor(count int, startCursor string, key event.Key) ([]*watch.ChainNode, error) {
 	keys := []string{key.MainHashKey(), startCursor, strconv.Itoa(count), key.TailKey()}
-	nodes, err := s.runScriptsWithArrayChainNode(getNodeWithCursorScript, keys, startCursorNotExistError)
+	nodes, err := w.runScriptsWithArrayChainNode(getNodeWithCursorScript, keys, startCursorNotExistError)
 	if err != nil {
 
 		if strings.Contains(err.Error(), startCursorNotExistError) && startCursor == key.HeadKey() {
@@ -140,9 +140,9 @@ return rtn
 `
 )
 
-func (s *Service) getHeadTailNodeTargetNode(key event.Key) (*watch.ChainNode, *watch.ChainNode, error) {
+func (w *Watcher) GetHeadTailNodeTargetNode(key event.Key) (*watch.ChainNode, *watch.ChainNode, error) {
 	keys := []string{key.MainHashKey(), key.HeadKey(), key.TailKey()}
-	headTail, err := s.runScriptsWithArrayChainNode(getHeadTailTargetNode, keys, headOrTailNodeNotExistError, headOrTailTargetedNodeNotExistError)
+	headTail, err := w.runScriptsWithArrayChainNode(getHeadTailTargetNode, keys, headOrTailNodeNotExistError, headOrTailTargetedNodeNotExistError)
 	if err != nil {
 
 		if strings.Contains(err.Error(), headOrTailNodeNotExistError) {
@@ -160,8 +160,8 @@ func (s *Service) getHeadTailNodeTargetNode(key event.Key) (*watch.ChainNode, *w
 
 // runScripts run lua scripts that returns an string if an error occurs.
 // or return a result array ChainNode
-func (s *Service) runScriptsWithArrayChainNode(script string, keys []string, args ...interface{}) ([]*watch.ChainNode, error) {
-	result, err := s.cache.Eval(script, keys, args...).Result()
+func (w *Watcher) runScriptsWithArrayChainNode(script string, keys []string, args ...interface{}) ([]*watch.ChainNode, error) {
+	result, err := w.cache.Eval(script, keys, args...).Result()
 	if err != nil {
 		return nil, err
 	}
@@ -246,10 +246,10 @@ return rtn
 `
 )
 
-func (s *Service) getLatestEventDetail(key event.Key) (node *watch.ChainNode, detail string, err error) {
+func (w *Watcher) GetLatestEventDetail(key event.Key) (node *watch.ChainNode, detail string, err error) {
 	keys := []string{key.MainHashKey(), key.HeadKey(), key.TailKey(), key.DetailKey("")}
 
-	result, err := s.runScriptsWithArrayString(getTailTargetScript, keys, tailNodeNotExistError,
+	result, err := w.runScriptsWithArrayString(getTailTargetScript, keys, tailNodeNotExistError,
 		tailNodeTargetNotExistError, noEventWarning)
 	if err != nil {
 
@@ -283,8 +283,8 @@ func (s *Service) getLatestEventDetail(key event.Key) (node *watch.ChainNode, de
 
 // runScripts run lua scripts that returns an string if an error occurs.
 // or return a result array string
-func (s *Service) runScriptsWithArrayString(script string, keys []string, args ...interface{}) ([]string, error) {
-	result, err := s.cache.Eval(script, keys, args...).Result()
+func (w *Watcher) runScriptsWithArrayString(script string, keys []string, args ...interface{}) ([]string, error) {
+	result, err := w.cache.Eval(script, keys, args...).Result()
 	if err != nil {
 		return nil, err
 	}

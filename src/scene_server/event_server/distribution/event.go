@@ -17,50 +17,108 @@ import (
 	"fmt"
 	"runtime/debug"
 	"strconv"
+	"sync"
 	"time"
 
 	"configcenter/src/common"
 	"configcenter/src/common/blog"
 	"configcenter/src/common/metadata"
+	"configcenter/src/common/watch"
 	"configcenter/src/scene_server/event_server/types"
 
 	"gopkg.in/redis.v5"
 )
 
-var (
-	timeout    = time.Second * 10
-	waitPeriod = time.Second
-)
+// EventSender sends target events to subscribers in callback mode.
+type EventSender struct {
+	ctx context.Context
+}
 
-// Err define
-var (
-	ErrWaitTimeout   = fmt.Errorf("wait timeout")
-	ErrProcessExists = fmt.Errorf("process exists")
-)
+// EventHandler manages all event senders, and update senders in dynamic mode,
+// when there are events need to be sent, the sender would check hash ring and send
+// message to subscriber in callback or not.
+type EventHandler struct {
+	ctx context.Context
 
-func (eh *EventHandler) Run() (err error) {
-	defer func() {
-		sysError := recover()
-		if sysError != nil {
-			err = fmt.Errorf("system error: %v", sysError)
-		}
-		if err != nil {
-			blog.Infof("event inst handle process stopped by %v", err)
-			blog.Errorf("%s", debug.Stack())
-		}
-	}()
+	// senders is local event senders, update in dynamic mode, subid -> EventSender.
+	senders map[string]*EventSender
 
+	// sendersMu make senders ops safe.
+	sendersMu sync.RWMutex
+}
+
+// senderKey returns the key of event sender.
+func (h *EventHandler) senderKey(ownerid, eventType string, subid int64) string {
+	return fmt.Sprintf("%s:%s:%d", ownerid, eventType, subid)
+}
+
+func (h *EventHandler) Run() (err error) {
 	blog.Info("event inst handle process started")
+
 	for {
 		event := eh.popEvent()
 		if event == nil {
 			time.Sleep(time.Second * 2)
 			continue
 		}
+
 		if err := eh.handleEvent(event); err != nil {
 			blog.Errorf("handle event failed, err: %+v, event: %+v", err, event)
 		}
 	}
+}
+
+// Distribute handles new events from distributer, and distribute into each event sender.
+func (h *EventHandler) Distribute(events []*watch.WatchEventDetail) error {
+	var eventStr string
+
+	/*
+		WatchEventDetail:
+		EventType:create/update/delete
+		Detail: e.DocBytes
+
+
+
+		EventInst:
+		EventType(instdata/relation/association/resource)
+		// EventType define
+		type EventType string
+
+		// EventType enumeration
+		const (
+		   // 实例CRUD事件，实例类型通过event中的objType字段区分
+		   EventTypeInstData = "instdata"
+
+		   // 实例间的绑定关系发生变化，目前主要用于主机转移
+		   EventTypeRelation           = "relation"
+
+		   // objtyope + update
+		   EventTypeAssociation        = "association"
+
+		   // 没人用
+		   EventTypeResourcePoolModule = "resource"
+		)
+
+		ObjType:(processmodule/moduletransfer)
+
+		Action:(create/update/delete)
+		Data:(curData)
+	*/
+
+	// push event into types.EventCacheEventQueueDuplicateKey queue so that identifierHandler could deal with it
+	eh.cache.BRPopLPush(types.EventCacheEventQueueKey,
+		types.EventCacheEventQueueDuplicateKey, time.Second*60).Scan(&eventStr)
+
+	if eventStr == "" || eventStr == nilStr {
+		return nil
+	}
+	eventBytes := []byte(eventStr)
+	event := metadata.EventInst{}
+	if err := json.Unmarshal(eventBytes, &event); err != nil {
+		blog.Errorf("event distribute fail, unmarshal error: %v, data=[%s]", err, eventBytes)
+		return nil
+	}
+	return &metadata.EventInstCtx{EventInst: event, Raw: eventStr}
 }
 
 func (eh *EventHandler) handleEvent(event *metadata.EventInstCtx) (err error) {
@@ -246,23 +304,3 @@ func saveRunning(cache *redis.Client, key string, timeout time.Duration) (err er
 func (eh *EventHandler) findEventTypeSubscribers(eventType, ownerID string) []string {
 	return eh.cache.SMembers(types.EventSubscriberCacheKey(ownerID, eventType)).Val()
 }
-
-func (eh *EventHandler) popEvent() *metadata.EventInstCtx {
-	var eventStr string
-
-	// push event into types.EventCacheEventQueueDuplicateKey queue so that identifierHandler could deal with it
-	eh.cache.BRPopLPush(types.EventCacheEventQueueKey, types.EventCacheEventQueueDuplicateKey, time.Second*60).Scan(&eventStr)
-
-	if eventStr == "" || eventStr == nilStr {
-		return nil
-	}
-	eventBytes := []byte(eventStr)
-	event := metadata.EventInst{}
-	if err := json.Unmarshal(eventBytes, &event); err != nil {
-		blog.Errorf("event distribute fail, unmarshal error: %v, data=[%s]", err, eventBytes)
-		return nil
-	}
-	return &metadata.EventInstCtx{EventInst: event, Raw: eventStr}
-}
-
-const nilStr = "nil"

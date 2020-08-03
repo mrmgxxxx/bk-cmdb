@@ -57,7 +57,13 @@ const (
 	Biz                CursorType = "biz"
 	Set                CursorType = "set"
 	Module             CursorType = "module"
+	ObjectBase         CursorType = "object"
 )
+
+// ListCursorTypes returns all support CursorTypes.
+func ListCursorTypes() []CursorType {
+	return []CursorType{Host, ModuleHostRelation, Biz, Set, Module, ObjectBase}
+}
 
 func (ct CursorType) ToInt() int {
 	switch ct {
@@ -73,6 +79,8 @@ func (ct CursorType) ToInt() int {
 		return 5
 	case Module:
 		return 6
+	case ObjectBase:
+		return 7
 	default:
 		return -1
 	}
@@ -92,8 +100,36 @@ func (ct *CursorType) ParseInt(typ int) {
 		*ct = Set
 	case 6:
 		*ct = Module
+	case 7:
+		*ct = ObjectBase
 	default:
 		*ct = UnknownType
+	}
+}
+
+// ParseCursorTypeFromEventType returns target cursor type type base on event type.
+func ParseCursorTypeFromEventType(eventType string) CursorType {
+	switch eventType {
+	case "hostCreate":
+		return Host
+
+	case "hostCreate":
+		return ModuleHostRelation
+
+	case "hostCreate":
+		return Biz
+
+	case "hostCreate":
+		return Set
+
+	case "hostCreate":
+		return Module
+
+	case "hostCreate":
+		return ObjectBase
+
+	default:
+		return UnknownType
 	}
 }
 
@@ -228,6 +264,8 @@ func GetEventCursor(coll string, e *types.Event) (string, error) {
 		curType = Set
 	case common.BKTableNameBaseModule:
 		curType = Module
+	case common.BKTableNameBaseInst:
+		curType = ObjectBase
 	default:
 		blog.Errorf("unsupported cursor type collection: %s, oid: %s", e.Oid)
 		return "", fmt.Errorf("unsupported cursor type collection: %s", coll)
